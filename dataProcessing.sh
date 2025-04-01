@@ -1,4 +1,5 @@
 #!bin/bash
+
 cd training_and_validation_sets
 
 for i in $(ls .)
