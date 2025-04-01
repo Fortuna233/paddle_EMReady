@@ -4,43 +4,29 @@ from math import ceil
 from interp3d import interp3d
 
 def split_map_into_overlapped_chunks(map, box_size, stride, dtype=np.float32, padding=0.0):
-
-	assert stride <= box_size #断言步长小于立方体变长
-	map_shape = np.shape(map) #获得输入图尺寸
-	padded_map = np.full((map_shape[0] + 2 * box_size, map_shape[1] + 2 * box_size, map_shape[2] + 2 * box_size), padding, dtype=dtype)
-# 初始化paddedmap，以float32 0 填充
-	padded_map[box_size : box_size + map_shape[0], box_size : box_size + map_shape[1], box_size : box_size + map_shape[2]] = map
-# 用输入图填充paddedmap中心区域
-	
-	chunk_list = list()  #储存所有块的列表
-	start_point = box_size - stride   
-	cur_x, cur_y, cur_z = start_point, start_point, start_point
-	while(cur_z + stride < map_shape[2] + box_size):
-		next_chunk = padded_map[
-		cur_x : cur_x + box_size,
-		cur_y : cur_y + box_size,
-		cur_z : cur_z + box_size
-		]
-		chunk_list.append(next_chunk)
-
-		cur_x += stride
-
-		if(cur_x + stride >= map_shape[0] + box_size):
-			cur_y += stride
-			cur_x = start_point
-
-			if(cur_y + stride >= map_shape[1] + box_size):
-				cur_z += stride
-				cur_x = start_point
-				cur_y =start_point
-		n_chunks = len(chunk_list)
-
-		ncx, ncy, ncz = [ceil(map_shape[i] / stride) for i in range(3)]
-		assert(n_chunks == ncx * ncy * ncz)
-
-		chunks = np.asarray(chunk_list, dtype = dtype)
-
-		return chunks, ncx, ncy, ncz
+    assert stride <= box_size
+    map_shape = np.shape(map)
+    padded_map = np.full((map_shape[0] + 2 * box_size, map_shape[1] + 2 * box_size, map_shape[2] + 2 * box_size), padding, dtype=dtype)
+    padded_map[box_size : box_size + map_shape[0], box_size : box_size + map_shape[1], box_size : box_size + map_shape[2]] = map
+    chunk_list = list()
+    start_point = box_size - stride
+    cur_x, cur_y, cur_z = start_point, start_point, start_point
+    while (cur_z + stride < map_shape[2] + box_size):
+        next_chunk = padded_map[cur_x:cur_x + box_size, cur_y:cur_y + box_size, cur_z:cur_z + box_size]
+        cur_x += stride
+        if (cur_x + stride >= map_shape[0] + box_size):
+            cur_y += stride
+            cur_x = start_point # Reset X
+            if (cur_y + stride  >= map_shape[1] + box_size):
+                cur_z += stride
+                cur_y = start_point # Reset Y
+                cur_x = start_point # Reset X
+        chunk_list.append(next_chunk)
+    n_chunks = len(chunk_list)
+    ncx, ncy, ncz = [ceil(map_shape[i] / stride) for i in range(3)]
+    assert(n_chunks == ncx * ncy * ncz)
+    chunks = np.asarray(chunk_list, dtype=dtype)
+    return chunks, ncx, ncy, ncz
 
 
 def get_map_from_overlapped_chunks(chunks, ncx, ncy, ncz, box_size, stride, nxyz, dtype=np.float32):
@@ -56,6 +42,13 @@ def get_map_from_overlapped_chunks(chunks, ncx, ncy, ncz, box_size, stride, nxyz
 				denominator[x * stride : x * stride + box_size, y * stride : y * stride + box_size, z * stride : z * stride + box_size] += 1
 				i += 1	
 	return (map / denominator.clip(min = 1))[stride : nxyz[2] + stride, stride :nxyz[1] + stride, stride : nxyz[0] + stride]
+
+
+def pad_map(map, box_size, dtype=np.float32, padding=0.0):
+	map_shape = np.shape(map)
+	padded_map = np.full((map_shape[0] + 2 * box_size, map_shape[1] + 2 * box_size, map_shape[2] + 2 * box_size), padding, dtype=dtype)
+	padded_map[box_size : box_size + map_shape[0], box_size : box_size + map_shape[1], box_size : box_size + map_shape[2]] = map
+	return padded_map
 
 
 def chunk_generator(padded_map, maximum, box_size, stride):
