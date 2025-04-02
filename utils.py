@@ -98,61 +98,62 @@ def map_batch_to_map(pred_map, denominator, positions, batch, box_size):
 
 
 def parse_map(map_file, ignorestart, apix=None, origin_shift=None):
-	mrc = mrcfile.open(map_file, mode="r")
-	map = np.asarray(mrc.data.copy(), dtype=np.float32)
-	voxel_size = np.asarray([mrc.voxel_size.x, mrc.voxel_size.y, mrc.voxel_size.z], dtype=np.float32)
 
-	ncrsstart = np.asarray([mrc.header.nxstart, mrc.header.nystart, mrc.header.nzstart], dtype=np.float32)
+    ''' parse mrc '''
+    mrc = mrcfile.open(map_file, mode='r')
 
-	origin = np.asarray([mrc.header.origin.x, mrc.header.origin.y, mrc.header.origin.z], dtype=np.float32)
+    map = np.asarray(mrc.data.copy(), dtype=np.float32)
+    voxel_size = np.asarray([mrc.voxel_size.x, mrc.voxel_size.y, mrc.voxel_size.z], dtype=np.float32)
+    ncrsstart = np.asarray([mrc.header.nxstart, mrc.header.nystart, mrc.header.nzstart], dtype=np.float32)
+    origin = np.asarray([mrc.header.origin.x, mrc.header.origin.y, mrc.header.origin.z], dtype=np.float32)
+    ncrs = (mrc.header.nx, mrc.header.ny, mrc.header.nz)
+    angle = np.asarray([mrc.header.cellb.alpha, mrc.header.cellb.beta, mrc.header.cellb.gamma], dtype=np.float32)
 
-	ncrs = (mrc.header.nx, mrc.header.ny, mrc.header.nz)
+    ''' check orthogonal '''
+    try:
+        assert(angle[0] == angle[1] == angle[2] == 90.0)
+    except AssertionError:
+        print("# Input grid is not orthogonal. EXIT.")
+        mrc.close()
+        exit()
 
-	angle = np.asarray([mrc.header.cellb.alpha, mrc.header.cellb.beta, mrc.header.cellb.gamma], dtype=np.float32)
+    ''' reorder axes '''
+    mapcrs = np.subtract([mrc.header.mapc, mrc.header.mapr, mrc.header.maps], 1)
+    sort = np.asarray([0, 1, 2], dtype=np.int64)
+    for i in range(3):
+        sort[mapcrs[i]] = i
+    nxyzstart = np.asarray([ncrsstart[i] for i in sort])
+    nxyz = np.asarray([ncrs[i] for i in sort])
+    nxyz_old = nxyz
 
-	try:
-		assert(angle[0] == angle[1] == angle[2] == 90)
-	except AssertionError:
-		print("Input grid isn't orthogonal. EXIT.")
-		mrc.close()
-		exit()
-	
-	mapcrs = np.subtract([mrc.header.mapc, mrc.header.mapr, mrc.header.maps], 1)
-	sort = np.asarray([0, 1, 2], dtype=np.int64)
-	for i in range(3):
-		sort[mapcrs[i]] = i
-		nxyzstart = np.asarray([ncrsstart[i] for i in sort])
-		nxyz = np.asarray([ncrs[i] for i in sort])
-		nxyz_old = nxyz
+    map = np.transpose(map, axes=2-sort[::-1])
+    mrc.close()
 
-		map = np.transpose(map, axes=2-sort[::-1])
-		mrc.close()
+    ''' shift origin according to n*start '''
+    if not ignorestart:
+        origin += np.multiply(nxyzstart, voxel_size)
 
-	if not ignorestart:
-		origin += np.multiply(nxyzstart, voxel_size)
+    ''' interpolate grid interval '''
+    if apix is not None:
+        try:
+            assert(voxel_size[0] == voxel_size[1] == voxel_size[2] == apix and origin_shift is None)
+        except AssertionError:
+            interp3d.del_mapout()
+            target_voxel_size = np.asarray([apix, apix, apix], dtype=np.float32)
+            print("# Rescale voxel size from {} to {}".format(voxel_size, target_voxel_size))
+            if origin_shift is not None:
+                interp3d.cubic(map, voxel_size[2], voxel_size[1], voxel_size[0], apix, origin_shift[2], origin_shift[1], origin_shift[0], nxyz[2], nxyz[1], nxyz[0])
+                origin += origin_shift
+            else:
+                interp3d.cubic(map, voxel_size[2], voxel_size[1], voxel_size[0], apix, 0.0, 0.0, 0.0, nxyz[2], nxyz[1], nxyz[0])
+                
+            map = interp3d.mapout
+            nxyz = np.asarray([interp3d.pextx, interp3d.pexty, interp3d.pextz], dtype=np.int64)
+            voxel_size = target_voxel_size
 
-	if apix is not None:
-		try:
-			assert(voxel_size[0] == voxel_size[1] == voxel_size[2] == apix and origin_shift is None)
-		
-		except AssertionError:
-			interp3d.del_mapout()
-			target_voxel_size = np.asarray([apix, apix, apix], dtype=np.float32)
-			print("Rescale voxel size from {} to {}".format(voxel_size, target_voxel_size))
+    assert(np.all(nxyz == np.asarray([map.shape[2], map.shape[1], map.shape[0]], dtype=np.int64)))
 
-			if origin_shift is not None:
-				interp3d.cubic(map, voxel_size[2], voxel_size[1], voxel_size[0], apix, origin_shift[2], origin_shift[1], origin_shift[0], nxyz[2], nxyz[1], nxyz[0])
-				origin += origin_shift
-
-			else:
-				interp3d.cubic(map, voxel_size[2], voxel_size[1], voxel_size[0], apix, 0.0, 0.0, 0.0, nxyz[2], nxyz[1], nxyz[0])
-			map = interp3d.mapout
-			nxyz = np.asarray([interp3d.pextx, interp3d.pexty, interp3d.pextz], dtype=np.int64)
-			voxel_size = target_voxel_size
-
-	assert(np.all(nxyz == np.asarray([map.shape[2], map.shape[1], map.shape[0]], dtype=np.int64)))
-
-	return map, origin, nxyz, voxel_size, nxyz_old
+    return map, origin, nxyz, voxel_size, nxyz_old
 
 
 def inverse_map(map_pred, nxyz, origin, voxel_size, old_voxel_size, origin_shift):
