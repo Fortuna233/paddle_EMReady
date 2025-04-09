@@ -109,6 +109,8 @@ def parse_map(map_file, ignorestart, apix=None, origin_shift=None):
     ncrs = (mrc.header.nx, mrc.header.ny, mrc.header.nz)
     angle = np.asarray([mrc.header.cellb.alpha, mrc.header.cellb.beta, mrc.header.cellb.gamma], dtype=np.float32)
 
+
+
     ''' check orthogonal '''
     try:
         assert(angle[0] == angle[1] == angle[2] == 90.0)
