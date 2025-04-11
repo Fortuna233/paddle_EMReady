@@ -96,11 +96,15 @@ for epoch in range(num_epochs):
         train_loss = 0
         depoPadded, depoMax = mrc2padded(depoFile, 1.0)
         simuPadded, simuMax = mrc2padded(simuFile, 1.0)
+        depoShape = depoPadded.shape
+        simuShape = simuPadded.shape
+        #两个map不一样大，如何align，同时生成一样大的且对应的map
+
         depo_generator = chunk_generator(depoPadded, depoMax, 60, 30)
         simu_generator = chunk_generator(simuPadded, simuMax, 60, 30)
         while True:
-            _, depo_chunks = get_batch_from_generator(depo_generator, 8, dtype=np.float32)
-            _, simu_chunks = get_batch_from_generator(simu_generator, 8, dtype=np.float32)
+            positions_depo, depo_chunks = get_batch_from_generator(depo_generator, 8, dtype=np.float32)
+            positions_simu, simu_chunks = get_batch_from_generator(simu_generator, 8, dtype=np.float32)
             if depo_chunks.shape != simu_chunks.shape:
                 continue
             
@@ -108,9 +112,10 @@ for epoch in range(num_epochs):
                 break
             depo_chunks = torch.from_numpy(depo_chunks).float()
             simu_chunks = torch.from_numpy(simu_chunks).float()
+            #保证depo和simu这俩map对每个chunk的操作完全一致，即密度能完全对应上
             depo_chunks = transform(depo_chunks)
             simu_chunks = transform(simu_chunks)
-            print(depo_chunks.shape)
+
 
             X = V(FT(depo_chunks), requires_grad=True).view(-1, 1, 48, 48, 48)
             X = X.cuda()
@@ -121,5 +126,6 @@ for epoch in range(num_epochs):
             l.backward()
             trainer.step()
             train_loss += l
-            print(f"Memory used: {psutil.virtual_memory().percent}%")
+            print(f"depo: {positions_depo} / {depoShape}")
+            print(f"simu: {positions_simu} / {simuShape}")
         print(f"epoch:{epoch} depofile:{depoFile} train_loss:{train_loss}")
