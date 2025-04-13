@@ -16,8 +16,8 @@
 import mrcfile
 import numpy as np
 from math import ceil
-
 from interp3d import interp3d
+
 
 def split_map_into_overlapped_chunks(map, box_size, stride, dtype=np.float32, padding=0.0):
     assert stride <= box_size
@@ -44,6 +44,7 @@ def split_map_into_overlapped_chunks(map, box_size, stride, dtype=np.float32, pa
     chunks = np.asarray(chunk_list, dtype=dtype)
     return chunks, ncx, ncy, ncz
 
+
 # get a map from all of the overlapped chunks
 def get_map_from_overlapped_chunks(chunks, ncx, ncy, ncz, box_size, stride, nxyz, dtype=np.float32):
     map = np.zeros(((ncx - 1) * stride + box_size, \
@@ -66,11 +67,13 @@ def get_map_from_overlapped_chunks(chunks, ncx, ncy, ncz, box_size, stride, nxyz
                 i += 1
     return (map / denominator.clip(min=1))[stride : nxyz[2] + stride, stride : nxyz[1] + stride, stride : nxyz[0] + stride]
 
+
 def pad_map(map, box_size, dtype=np.float32, padding=0.0):
     map_shape = np.shape(map)
     padded_map = np.full((map_shape[0] + 2 * box_size, map_shape[1] + 2 * box_size, map_shape[2] + 2 * box_size), padding, dtype=dtype)
     padded_map[box_size : box_size + map_shape[0], box_size : box_size + map_shape[1], box_size : box_size + map_shape[2]] = map
     return padded_map
+
 
 # generator version
 def chunk_generator(padded_map, maximum, box_size, stride):
@@ -95,6 +98,7 @@ def chunk_generator(padded_map, maximum, box_size, stride):
         else:
             yield cur_x0, cur_y0, cur_z0, next_chunk.clip(min=0.0, max=maximum) / maximum * 100.0
 
+
 # get a batch of chunks from generator
 def get_batch_from_generator(generator, batch_size, dtype=np.float32):
     positions = list()
@@ -108,12 +112,14 @@ def get_batch_from_generator(generator, batch_size, dtype=np.float32):
             break
     return positions, np.asarray(batch, dtype=dtype)
 
+
 # map the batch of chunks to the map
 def map_batch_to_map(pred_map, denominator, positions, batch, box_size):
     for position, chunk in zip(positions, batch):
         pred_map[position[0]:position[0] + box_size, position[1]:position[1] + box_size, position[2]:position[2] + box_size] += chunk
         denominator[position[0]:position[0] + box_size, position[1]:position[1] + box_size, position[2]:position[2] + box_size] += 1
     return pred_map, denominator
+
 
 def parse_map(map_file, ignorestart, apix=None, origin_shift=None):
 
