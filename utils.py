@@ -13,7 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+
+import random
 import mrcfile
+import torch
 import numpy as np
 from math import ceil
 from interp3d import interp3d
@@ -197,3 +200,59 @@ def write_map(file_name, map, voxel_size, origin=(0.0, 0.0, 0.0), nxyzstart=(0, 
     mrc.voxel_size = [voxel_size[i] for i in range(3)]
 
     mrc.close()
+
+
+def mrc2map(mrcfile, apix):
+    mrc = mrcfile.open(mrcfile, mode='r')
+    voxel_size = np.asarray([mrc.voxel_size.x, mrc.voxel_size.y, mrc.voxel_size.z], dtype=np.float32)
+    origin = np.asarray([mrc.header.origin.x, mrc.header.origin.y, mrc.header.origin.z], dtype=np.float32)
+    mrc.close()
+    try:
+        assert np.all(np.abs(np.round(origin / voxel_size) - origin / voxel_size) < 1e-4)
+
+    except AssertionError:
+        origin_shift =  ( np.round(origin / voxel_size) - origin / voxel_size ) * voxel_size
+        map, origin, nxyz, voxel_size, _ = parse_map(mrcfile, ignorestart=False, apix=apix, origin_shift=origin_shift)
+        assert np.all(np.abs(np.round(origin / voxel_size) - origin / voxel_size) < 1e-4)
+
+    nxyzstart = np.round(origin / voxel_size).astype(np.int64)
+    print(f"origin: {origin}, nxyz: {nxyz}")
+    print(f"# Map dimensions at {apix} Angstrom grid size: {nxyz}")
+    maximum = np.percentile(map[map > 0], 99.999)
+    map = map.clip(min=0.0, max=maximum) / maximum
+    return map
+
+
+def trim_zero_edges(map):
+    #tensor.any(axis=(0,1)) 在沿Z轴切片上，有一个非零元素即返回True，记录其索引
+    z_nonzero = np.where(map.any(axis=(0,1)))[0]
+    map = map[:, :, z_nonzero[0]:z_nonzero[-1]+1]
+    y_nonzero = np.where(map.any(axis=(0,2)))[0]
+    map = map[:, y_nonzero[0]:y_nonzero[-1]+1, :]
+    x_nonzero = np.where(map.any(axis=(1,2)))[0]
+    map = map[x_nonzero[0]:x_nonzero[-1]+1, :, :]
+    return map
+
+
+def align(depoMap, simuMap):
+
+    return
+
+
+# 同时对depochunks、simuchunks进行图像增广
+def transform(tensor1, tensor2, outsize=48):
+    N = tensor1.shape[0]
+    nx, ny, nz = tensor1.shape[1:4]
+    starts = torch.randint(0, 12, (N, 3))
+    ends = starts + 48
+    axes_options = random.choice([(0, 1), (1, 2), (0, 2)])
+    cropped1 = torch.zeros(N, outsize, outsize, outsize)
+    cropped2 = torch.zeros(N, outsize, outsize, outsize)
+    for i in range(N):
+        k = random.randint(0, 3)
+        tensor1[i] = torch.rot90(tensor1[i], k, dims=axes_options)
+        tensor2[i] = torch.rot90(tensor2[i], k, dims=axes_options)
+        cropped1[i] = tensor1[i, starts[i, 0] : ends[i, 0], starts[i, 1] : ends[i, 1], starts[i, 2] : ends[i, 2]]
+        cropped2[i] = tensor2[i, starts[i, 0] : ends[i, 0], starts[i, 1] : ends[i, 1], starts[i, 2] : ends[i, 2]]
+
+    return cropped1, cropped2
