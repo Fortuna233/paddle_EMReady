@@ -79,7 +79,7 @@ def pad_map(map, box_size, dtype=np.float32, padding=0.0):
 
 
 # generator version
-def chunk_generator(padded_map, maximum, box_size, stride):
+def chunk_generator(padded_map, box_size, stride):
     assert stride <= box_size
     padded_map_shape = np.shape(padded_map)
     start_point = box_size - stride
@@ -99,7 +99,7 @@ def chunk_generator(padded_map, maximum, box_size, stride):
         if next_chunk.max() <= 0.0:
             continue
         else:
-            yield cur_x0, cur_y0, cur_z0, next_chunk.clip(min=0.0, max=maximum) / maximum * 100.0
+            yield cur_x0, cur_y0, cur_z0, next_chunk
 
 
 # get a batch of chunks from generator
@@ -202,17 +202,14 @@ def write_map(file_name, map, voxel_size, origin=(0.0, 0.0, 0.0), nxyzstart=(0, 
     mrc.close()
 
 
-def mrc2map(mrcfile, apix):
-    mrc = mrcfile.open(mrcfile, mode='r')
-    voxel_size = np.asarray([mrc.voxel_size.x, mrc.voxel_size.y, mrc.voxel_size.z], dtype=np.float32)
-    origin = np.asarray([mrc.header.origin.x, mrc.header.origin.y, mrc.header.origin.z], dtype=np.float32)
-    mrc.close()
+def mrc2map(mrc_map, apix):
+    map, origin, nxyz, voxel_size, _ = parse_map(mrc_map, ignorestart=False, apix=apix)
     try:
         assert np.all(np.abs(np.round(origin / voxel_size) - origin / voxel_size) < 1e-4)
 
     except AssertionError:
         origin_shift =  ( np.round(origin / voxel_size) - origin / voxel_size ) * voxel_size
-        map, origin, nxyz, voxel_size, _ = parse_map(mrcfile, ignorestart=False, apix=apix, origin_shift=origin_shift)
+        map, origin, nxyz, voxel_size, _ = parse_map(mrc_map, ignorestart=False, apix=apix, origin_shift=origin_shift)
         assert np.all(np.abs(np.round(origin / voxel_size) - origin / voxel_size) < 1e-4)
 
     nxyzstart = np.round(origin / voxel_size).astype(np.int64)
@@ -223,20 +220,27 @@ def mrc2map(mrcfile, apix):
     return map
 
 
-def trim_zero_edges(map):
-    #tensor.any(axis=(0,1)) 在沿Z轴切片上，有一个非零元素即返回True，记录其索引
-    z_nonzero = np.where(map.any(axis=(0,1)))[0]
-    map = map[:, :, z_nonzero[0]:z_nonzero[-1]+1]
-    y_nonzero = np.where(map.any(axis=(0,2)))[0]
-    map = map[:, y_nonzero[0]:y_nonzero[-1]+1, :]
-    x_nonzero = np.where(map.any(axis=(1,2)))[0]
-    map = map[x_nonzero[0]:x_nonzero[-1]+1, :, :]
-    return map
-
-
+# 输入numpy张量, 返回torch张量
 def align(depoMap, simuMap):
-
-    return
+    depoMap = torch.from_numpy(depoMap)
+    simuMap = torch.from_numpy(simuMap)
+    xyz_max = [max(depoMap.shape[0], simuMap.shape[0]), 
+               max(depoMap.shape[1], simuMap.shape[1]),
+               max(depoMap.shape[2], simuMap.shape[2])]
+    print(xyz_max)
+    depoPadded = torch.zeros((xyz_max))
+    depoPadded[xyz_max[0] - depoMap.shape[0] : xyz_max[0],
+               xyz_max[1] - depoMap.shape[1] : xyz_max[1],
+               xyz_max[2] - depoMap.shape[2] : xyz_max[2],
+               ] = depoMap
+    corr = torch.nn.functional.conv3d(depoPadded.unsqueeze(0).unsqueeze(0), simuMap.unsqueeze(0).unsqueeze(0))
+    max_idx = torch.argmax(corr)
+    dx, dy, dz = np.unravel_index(max_idx.cpu().numpy(), corr.shape[2:])
+    cropped = depoPadded[dx : dx + simuMap.shape[0],
+                         dy : dy + simuMap.shape[1],
+                         dz : dz + simuMap.shape[2]]
+    print(f"cropped.shape: {cropped.shape}")
+    return cropped.numpy()
 
 
 # 同时对depochunks、simuchunks进行图像增广
