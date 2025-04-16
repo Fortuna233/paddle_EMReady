@@ -140,17 +140,16 @@ for depoFile, simuFile in zip(depoList, simuList):
         total_steps = float(ncx * ncy * ncz)
         cur_steps = 0
         while True:
-            depo_positions, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
-            simu_positions, simu_chunks = get_batch_from_generatorv(simu_generator, batch_size, dtype=np.float32)
+            _, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
+            _, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)
             depo_chunks = torch.from_numpy(depo_chunks)
             simu_chunks = torch.from_numpy(simu_chunks)     
-
+            print(f"depo_chunks.shape: {depo_chunks.shape}")
+            print(f"simu_chunks.shape: {simu_chunks.shape}")
             if depo_chunks.shape[0] == 0 or simu_chunks.shape[0] == 0:
                 break
             # 保证depo和simu这俩map对每个chunk的操作完全一致，即密度能完全对应上
             # 去除全零chunk（若有一全为零则同时去除两个的）
-            print(f"depo_chunks.shape: {depo_chunks.shape}")
-            print(f"simu_chunks.shape: {simu_chunks.shape}")
             depo_chunks, simu_chunks = transform(depo_chunks, simu_chunks)
             print("transformed chunks shape")
             print(f"depo_chunks.shape: {depo_chunks.shape}")

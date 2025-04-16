@@ -251,7 +251,6 @@ def transform(tensor1, tensor2, outsize=48):
     batch_mask = batch_mask > 0
     tensor1 = tensor1[batch_mask]
     tensor2 = tensor2[batch_mask]
-    tensor1.shape, tensor2.shape
     N = tensor1.shape[0]
     nx, ny, nz = tensor1.shape[1:4]
     starts = torch.randint(0, 12, (N, 3))
