@@ -140,10 +140,12 @@ for depoFile, simuFile in zip(depoList, simuList):
         total_steps = float(ncx * ncy * ncz)
         cur_steps = 0
         while True:
-            _, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
-            _, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)
+            depo_positions, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
+            simu_positions, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)
             depo_chunks = torch.from_numpy(depo_chunks)
             simu_chunks = torch.from_numpy(simu_chunks)     
+            print(f"depo_positions: {depo_positions}")
+            print(f"simu_positions: {simu_positions}")
             print(f"depo_chunks.shape: {depo_chunks.shape}")
             print(f"simu_chunks.shape: {simu_chunks.shape}")
             if depo_chunks.shape[0] == 0 or simu_chunks.shape[0] == 0:
