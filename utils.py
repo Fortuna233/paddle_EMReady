@@ -95,13 +95,12 @@ def chunk_generator(padded_map, box_size, stride):
                 cur_z += stride
                 cur_y = start_point # Reset Y
                 cur_x = start_point # Reset X
-                
+        yield cur_x0, cur_y0, cur_z0, next_chunk       
         # simuMap较为稀疏，产生的chunks数目少于depoMap
         # if next_chunk.max() <= 0.0:
         #     continue
         
         # else:             为保证两图所生成的chunks能对齐，注释之
-            yield cur_x0, cur_y0, cur_z0, next_chunk
 
 
 # get a batch of chunks from generator
@@ -218,8 +217,7 @@ def mrc2map(mrc_map, apix):
     print(f"origin: {origin}, nxyz: {nxyz}")
     print(f"# Map dimensions at {apix} Angstrom grid size: {nxyz}")
     maximum = np.percentile(map[map > 0], 99.999)
-    map = map.clip(min=0.0, max=maximum) / maximum
-    return map
+    return map, maximum
 
 
 # 输入numpy张量, 返回torch张量

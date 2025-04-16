@@ -119,12 +119,14 @@ for depoFile, simuFile in zip(depoList, simuList):
     if(os.path.getsize(depoFile) > 1024 * 1024 * 512 or os.path.getsize(simuFile) > 1024 * 1024 * 512):
         continue
     print(depoFile)
-    depoMap = mrc2map(depoFile, 1.0)
+    depoMap, depoMax = mrc2map(depoFile, 1.0)
     print(simuFile)
-    simuMap = mrc2map(simuFile, 1.0)
-    
     #对齐
+    simuMap, simuMax = mrc2map(simuFile, 1.0)
     depoMap = align(depoMap, simuMap)
+
+    depoMap = depoMap.clip(min=0.0, max=depoMax) / depoMax
+    simuMap = simuMap.clip(min=0.0, max=simuMax) / simuMax
     depoPadded = pad_map(depoMap, 60)
     del depoMap
     simuPadded = pad_map(simuMap, 60)
@@ -139,7 +141,7 @@ for depoFile, simuFile in zip(depoList, simuList):
         cur_steps = 0
         while True:
             depo_positions, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
-            simu_positions, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)
+            simu_positions, simu_chunks = get_batch_from_generatorv(simu_generator, batch_size, dtype=np.float32)
             depo_chunks = torch.from_numpy(depo_chunks)
             simu_chunks = torch.from_numpy(simu_chunks)     
 
@@ -150,6 +152,7 @@ for depoFile, simuFile in zip(depoList, simuList):
             print(f"depo_chunks.shape: {depo_chunks.shape}")
             print(f"simu_chunks.shape: {simu_chunks.shape}")
             depo_chunks, simu_chunks = transform(depo_chunks, simu_chunks)
+            print("transformed chunks shape")
             print(f"depo_chunks.shape: {depo_chunks.shape}")
             print(f"simu_chunks.shape: {simu_chunks.shape}")
             X = V(FT(depo_chunks), requires_grad=True).view(-1, 1, 48, 48, 48)
@@ -165,7 +168,7 @@ for depoFile, simuFile in zip(depoList, simuList):
             print(f"train_loss: {l:.2f}")
             print(f"processing: {cur_steps} / {total_steps}")
 
-        print(f"epoch:{epoch} depofile:{depoFile[-18][:4]} train_loss:{train_loss:.2f}")
+        print(f"epoch:{epoch} depofile:{depoFile[-18:][:4]} train_loss:{train_loss:.2f}")
         # 保存检查点
     checkpoint = {'mrcfile': depoFile[-18:][:4],
                   'model_state_dict': model.state_dict(),'optimizer_state_dict': trainer.state_dic(),
