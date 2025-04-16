@@ -120,11 +120,8 @@ for depoFile, simuFile in zip(depoList, simuList):
         continue
     print(depoFile)
     depoMap = mrc2map(depoFile, 1.0)
-    print(f"shape: {depoMap.shape}")
-
     print(simuFile)
     simuMap = mrc2map(simuFile, 1.0)
-    print(f"shape: {simuMap.shape}")
     
     #对齐
     depoMap = align(depoMap, simuMap)
@@ -141,14 +138,20 @@ for depoFile, simuFile in zip(depoList, simuList):
         total_steps = float(ncx * ncy * ncz)
         cur_steps = 0
         while True:
-            positions_depo, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
-            positions_simu, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)           
-            if depo_chunks.shape[0] == 0:
-                break
+            depo_positions, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
+            simu_positions, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)
             depo_chunks = torch.from_numpy(depo_chunks)
-            simu_chunks = torch.from_numpy(simu_chunks)
-            #保证depo和simu这俩map对每个chunk的操作完全一致，即密度能完全对应上
+            simu_chunks = torch.from_numpy(simu_chunks)     
+
+            if depo_chunks.shape[0] == 0 or simu_chunks.shape[0] == 0:
+                break
+            # 保证depo和simu这俩map对每个chunk的操作完全一致，即密度能完全对应上
+            # 去除全零chunk（若有一全为零则同时去除两个的）
+            print(f"depo_chunks.shape: {depo_chunks.shape}")
+            print(f"simu_chunks.shape: {simu_chunks.shape}")
             depo_chunks, simu_chunks = transform(depo_chunks, simu_chunks)
+            print(f"depo_chunks.shape: {depo_chunks.shape}")
+            print(f"simu_chunks.shape: {simu_chunks.shape}")
             X = V(FT(depo_chunks), requires_grad=True).view(-1, 1, 48, 48, 48)
             X = X.cuda()
             simu_chunks = simu_chunks.cuda()
@@ -159,10 +162,16 @@ for depoFile, simuFile in zip(depoList, simuList):
             trainer.step()
             train_loss += l
             cur_steps += len(depo_chunks)
+            print(f"train_loss: {l:.2f}")
             print(f"processing: {cur_steps} / {total_steps}")
 
-        print(f"epoch:{epoch} depofile:{depoFile} train_loss:{train_loss}")
+        print(f"epoch:{epoch} depofile:{depoFile[-18][:4]} train_loss:{train_loss:.2f}")
+        # 保存检查点
+    checkpoint = {'mrcfile': depoFile[-18:][:4],
+                  'model_state_dict': model.state_dict(),'optimizer_state_dict': trainer.state_dic(),
+                  'loss': train_loss,}
+    torch.save(checkpoint, 'checkpoint.pth')
 
 
-
+torch.save(model.state_dict(), 'model_weights.pth')
 

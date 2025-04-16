@@ -95,10 +95,12 @@ def chunk_generator(padded_map, box_size, stride):
                 cur_z += stride
                 cur_y = start_point # Reset Y
                 cur_x = start_point # Reset X
-
-        if next_chunk.max() <= 0.0:
-            continue
-        else:
+                
+        # simuMap较为稀疏，产生的chunks数目少于depoMap
+        # if next_chunk.max() <= 0.0:
+        #     continue
+        
+        # else:             为保证两图所生成的chunks能对齐，注释之
             yield cur_x0, cur_y0, cur_z0, next_chunk
 
 
@@ -227,7 +229,6 @@ def align(depoMap, simuMap):
     xyz_max = [max(depoMap.shape[0], simuMap.shape[0]), 
                max(depoMap.shape[1], simuMap.shape[1]),
                max(depoMap.shape[2], simuMap.shape[2])]
-    print(xyz_max)
     depoPadded = torch.zeros((xyz_max))
     depoPadded[xyz_max[0] - depoMap.shape[0] : xyz_max[0],
                xyz_max[1] - depoMap.shape[1] : xyz_max[1],
@@ -240,11 +241,19 @@ def align(depoMap, simuMap):
                          dy : dy + simuMap.shape[1],
                          dz : dz + simuMap.shape[2]]
     print(f"cropped.shape: {cropped.shape}")
+    print(f"simuMap.shape: {simuMap.shape}")
     return cropped.numpy()
 
 
 # 同时对depochunks、simuchunks进行图像增广
 def transform(tensor1, tensor2, outsize=48):
+    # 若两张量对应的元素有一个全为零，则去除两张量对应的元素
+    batch_mask = torch.sum(tensor1 > 0, dim=(1, 2, 3)) | torch.sum(tensor2 > 0, dim=(1, 2, 3))
+    # 全为0则0， 否则大于0
+    batch_mask = batch_mask > 0
+    tensor1 = tensor1[batch_mask]
+    tensor2 = tensor2[batch_mask]
+    tensor1.shape, tensor2.shape
     N = tensor1.shape[0]
     nx, ny, nz = tensor1.shape[1:4]
     starts = torch.randint(0, 12, (N, 3))
@@ -260,3 +269,6 @@ def transform(tensor1, tensor2, outsize=48):
         cropped2[i] = tensor2[i, starts[i, 0] : ends[i, 0], starts[i, 1] : ends[i, 1], starts[i, 2] : ends[i, 2]]
 
     return cropped1, cropped2
+
+
+
