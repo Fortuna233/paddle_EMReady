@@ -4,6 +4,7 @@ from math import ceil
 import numpy as np
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
+from torchvision import models
 import torch
 import torch.nn as nn
 from pytorch_msssim import ssim
@@ -118,15 +119,17 @@ model.train()
 for depoFile, simuFile in zip(depoList, simuList):
     if(os.path.getsize(depoFile) > 1024 * 1024 * 512 or os.path.getsize(simuFile) > 1024 * 1024 * 512):
         continue
-    print(depoFile)
+    print(depoFile[-18:][:4])
     depoMap, depoMax = mrc2map(depoFile, 1.0)
-    print(simuFile)
     #对齐
     simuMap, simuMax = mrc2map(simuFile, 1.0)
+    print("start aligning")
     depoMap = align(depoMap, simuMap)
-
+    print("normalization")
     depoMap = depoMap.clip(min=0.0, max=depoMax) / depoMax
     simuMap = simuMap.clip(min=0.0, max=simuMax) / simuMax
+    ncx, ncy, ncz = [ceil(depoMap.shape[i] / 30) for i in range(3)]
+    total_steps = float(ncx * ncy * ncz)
     depoPadded = pad_map(depoMap, 60)
     del depoMap
     simuPadded = pad_map(simuMap, 60)
@@ -136,16 +139,12 @@ for depoFile, simuFile in zip(depoList, simuList):
         train_loss = 0
         depo_generator = chunk_generator(depoPadded, 60, 30)
         simu_generator = chunk_generator(simuPadded, 60, 30)
-        ncx, ncy, ncz = [ceil(depoPadded.shape[i] / 30) for i in range(3)]
-        total_steps = float(ncx * ncy * ncz)
         cur_steps = 0
         while True:
-            depo_positions, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
-            simu_positions, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)
+            _, depo_chunks = get_batch_from_generator(depo_generator, batch_size, dtype=np.float32)
+            _, simu_chunks = get_batch_from_generator(simu_generator, batch_size, dtype=np.float32)
             depo_chunks = torch.from_numpy(depo_chunks)
             simu_chunks = torch.from_numpy(simu_chunks)     
-            print(f"depo_positions: {depo_positions}")
-            print(f"simu_positions: {simu_positions}")
             print(f"depo_chunks.shape: {depo_chunks.shape}")
             print(f"simu_chunks.shape: {simu_chunks.shape}")
             if depo_chunks.shape[0] == 0 or simu_chunks.shape[0] == 0:
@@ -166,16 +165,15 @@ for depoFile, simuFile in zip(depoList, simuList):
             trainer.step()
             train_loss += l
             cur_steps += len(depo_chunks)
-            print(f"train_loss: {l:.2f}")
+            print(f"train_loss: {l:.5f}")
             print(f"processing: {cur_steps} / {total_steps}")
+        torch.save(model.state_dict(), 'SCUnet.params')
 
-        print(f"epoch:{epoch} depofile:{depoFile[-18:][:4]} train_loss:{train_loss:.2f}")
+
+        print(f"epoch:{epoch} depofile:{depoFile[-18:][:4]} train_loss:{train_loss:.5f}")
         # 保存检查点
-    checkpoint = {'mrcfile': depoFile[-18:][:4],
-                  'model_state_dict': model.state_dict(),'optimizer_state_dict': trainer.state_dic(),
-                  'loss': train_loss,}
-    torch.save(checkpoint, 'checkpoint.pth')
 
 
-torch.save(model.state_dict(), 'model_weights.pth')
+
+torch.save(model.state_dict(), 'SCUnet.params')
 

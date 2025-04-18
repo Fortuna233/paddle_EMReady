@@ -217,7 +217,7 @@ def mrc2map(mrc_map, apix):
     print(f"origin: {origin}, nxyz: {nxyz}")
     print(f"# Map dimensions at {apix} Angstrom grid size: {nxyz}")
     maximum = np.percentile(map[map > 0], 99.999)
-    return map, maximum
+    return map.astype(np.float32), maximum
 
 
 # 输入numpy张量, 返回torch张量
