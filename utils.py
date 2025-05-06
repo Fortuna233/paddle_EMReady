@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
+import os
 import random
 import mrcfile
 import torch
@@ -311,6 +311,73 @@ def align(depoMap, simuMap):
     # 调试输出验证尺寸
     print(f"优化后裁剪尺寸: {cropped.shape}，理论目标尺寸: {simu_shape}")
     return cropped.numpy()
+
+
+def get_all_files(directory):
+    file_list = list()
+    for file in os.listdir(directory):
+        file_list.append(f"{directory}/{file}")
+    return file_list
+
+
+def split_and_save_tensor(depoFile, simuFile, save_dir, box_size=60, stride=30):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
+    print("depoFile:", depoFile[-18:][:4])
+    print("simuFile:", simuFile[-18:][:4])
+    depoMap, depoMax = mrc2map(depoFile, 1.0)
+    #对齐
+    simuMap, simuMax = mrc2map(simuFile, 1.0)
+    print("start aligning")
+    depoMap = align(depoMap, simuMap)
+    print("normalization")
+    depoMap = depoMap.clip(min=0.0, max=depoMax) / depoMax
+    simuMap = simuMap.clip(min=0.0, max=simuMax) / simuMax
+
+    assert depoMap.shape == simuMap.shape
+    map_shape = np.shape(depoMap)
+    depoPadded = np.full((map_shape[0] + 2 * box_size, map_shape[1] + 2 * box_size, map_shape[2] + 2 * box_size), 0.0, dtype=np.float32)
+    simuPadded = np.full((map_shape[0] + 2 * box_size, map_shape[1] + 2 * box_size, map_shape[2] + 2 * box_size), 0.0, dtype=np.float32)
+    depoPadded[box_size : box_size + map_shape[0], box_size : box_size + map_shape[1], box_size : box_size + map_shape[2]] = depoMap
+    simuPadded[box_size : box_size + map_shape[0], box_size : box_size + map_shape[1], box_size : box_size + map_shape[2]] = simuMap
+    n_chunks = 0
+    start_point = box_size - stride
+    cur_x, cur_y, cur_z = start_point, start_point, start_point
+    while (cur_z + stride < map_shape[2] + box_size):
+        next_chunk = [depoPadded[cur_x:cur_x + box_size, cur_y:cur_y + box_size, cur_z:cur_z + box_size],
+                       simuPadded[cur_x:cur_x + box_size, cur_y:cur_y + box_size, cur_z:cur_z + box_size]]
+        filename = os.path.join(save_dir, f'{depoFile[-18:][:4]}_{cur_x}_{cur_y}_{cur_z}.npy')
+        print(f'{depoFile[-18:][:4]}_{cur_x}_{cur_y}_{cur_z}.npy')
+        np.save(filename, next_chunk)
+        n_chunks += 1
+        cur_x += stride
+        if (cur_x + stride >= map_shape[0] + box_size):
+            cur_y += stride
+            cur_x = start_point # Reset X
+            if (cur_y + stride  >= map_shape[1] + box_size):
+                cur_z += stride
+                cur_y = start_point # Reset Y
+                cur_x = start_point # Reset X
+    ncx, ncy, ncz = [ceil(map_shape[i] / stride) for i in range(3)]
+    print(n_chunks)
+    print(ncx, ncy, ncz)
+    assert(n_chunks == ncx * ncy * ncz)
+
+
+def data_iter(save_dir, batch_size):
+    block_files = [f for f in os.listdir(save_dir) if f.endswith('.npy')]
+    random.shuffle(block_files)
+    n_chunks = len(block_files)
+    for i in range(0, n_chunks, batch_size):
+        batch_files = block_files[i:min(i + batch_size, n_chunks)]
+        batch = []
+        for file in batch_files:
+            file_path = os.path.join(save_dir, file)
+            chunk = np.load(file_path)
+            batch.append(chunk)
+        yield np.array(batch)
+
 
 # 同时对depochunks、simuchunks进行图像增广
 def transform(tensor1, tensor2, outsize=48):
