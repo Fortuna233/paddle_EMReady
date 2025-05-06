@@ -244,7 +244,12 @@ def align(depoMap, simuMap):
     # 转换输入为PyTorch张量
     depoMap = torch.from_numpy(depoMap)
     simuMap = torch.from_numpy(simuMap)
-
+    max_shape = [max(depo_shape[0], simuMap.shape[0]),
+                 max(depo_shape[1], simuMap.shape[1]),
+                 max(depo_shape[2], simuMap.shape[2])]
+    padded = torch.zeros(max_shape, dtype=depoMap.dtype)
+    padded[:depoMap.shape[0], :depoMap.shape[1], :depoMap.shape[2]] = depoMap
+    depoMap = padded
     # 获取两个三维张量的原始尺寸
     depo_shape = depoMap.shape
     simu_shape = simuMap.shape

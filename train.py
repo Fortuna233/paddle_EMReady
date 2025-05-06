@@ -17,7 +17,7 @@ depoFolder = "/data1/ryi/training_and_validation_sets/depoFiles"
 # simuFolder = "/home/ty/training_and_validation_sets/simuFiles"
 simuFolder = "/data1/ryi/training_and_validation_sets/simuFiles"
 save_dir="datasets"
-batch_size = 64
+batch_size = 96
 apix = 1
 num_epochs = 300
 
@@ -25,21 +25,25 @@ num_epochs = 300
 # 数据预处理
 def get_all_files(directory):
     file_list = list()
+    n_maps = 0
     for file in os.listdir(directory):
         file_list.append(f"{directory}/{file}")
-    return file_list
+    return file_list, n_maps
 
 
-depoList = get_all_files(depoFolder)
-simuList = get_all_files(simuFolder)
+depoList, n_depoMaps = get_all_files(depoFolder)
+simuList, n_simuMaps = get_all_files(simuFolder)
+assert n_depoMaps == n_simuMaps
+n_maps = n_depoMaps
 depoList.sort()
 simuList.sort()
 
 n_chunks = 0
-for depoFile, simuFile in zip(depoList, simuList):
-    if(os.path.getsize(depoFile) > 1024 * 1024 * 512 or os.path.getsize(simuFile) > 1024 * 1024 * 512):
-        continue
+for i, depoFile, simuFile in zip(range(n_maps), depoList, simuList):
+    # if(os.path.getsize(depoFile) > 1024 * 1024 * 512 or os.path.getsize(simuFile) > 1024 * 1024 * 512):
+    #     continue
     n_chunks += split_and_save_tensor(depoFile, simuFile, save_dir) 
+    print(f'processing: {i}/{n_maps}')
 devices = try_all_gpus()
 
 # 输入为torch张量batch_size*60*60*60
@@ -96,5 +100,5 @@ for epoch in range(num_epochs):
         trainer.step()
         train_loss += l
         cur_steps += len(depo_chunks)
-        print(f"processing: {cur_steps} / {n_chunks}, loss: {l:.5f}")
+        print(f"[processing: {cur_steps} / {n_chunks}], [loss: {l:.5f}]")
     print(f"epoch:{epoch} depofile:{depoFile} train_loss:{train_loss:.5f}")
