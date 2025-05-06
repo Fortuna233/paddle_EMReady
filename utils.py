@@ -204,16 +204,7 @@ def write_map(file_name, map, voxel_size, origin=(0.0, 0.0, 0.0), nxyzstart=(0, 
 
 
 def mrc2map(mrc_map, apix):
-    map, origin, nxyz, voxel_size, _ = parse_map(mrc_map, ignorestart=False, apix=apix)
-    try:
-        assert np.all(np.abs(np.round(origin / voxel_size) - origin / voxel_size) < 1e-4)
-
-    except AssertionError:
-        origin_shift =  ( np.round(origin / voxel_size) - origin / voxel_size ) * voxel_size
-        map, origin, nxyz, voxel_size, _ = parse_map(mrc_map, ignorestart=False, apix=apix, origin_shift=origin_shift)
-        assert np.all(np.abs(np.round(origin / voxel_size) - origin / voxel_size) < 1e-4)
-
-    nxyzstart = np.round(origin / voxel_size).astype(np.int64)
+    map, origin, nxyz, _, _ = parse_map(mrc_map, ignorestart=False, apix=apix)
     print(f"origin: {origin}, nxyz: {nxyz}")
     print(f"# Map dimensions at {apix} Angstrom grid size: {nxyz}")
     maximum = np.percentile(map[map > 0], 99.999)
@@ -363,6 +354,7 @@ def split_and_save_tensor(depoFile, simuFile, save_dir, box_size=60, stride=30):
     print(n_chunks)
     print(ncx, ncy, ncz)
     assert(n_chunks == ncx * ncy * ncz)
+    return n_chunks
 
 
 def data_iter(save_dir, batch_size):
@@ -376,7 +368,7 @@ def data_iter(save_dir, batch_size):
             file_path = os.path.join(save_dir, file)
             chunk = np.load(file_path)
             batch.append(chunk)
-        yield np.array(batch)
+        yield np.array(batch).transpose(1, 0, 2, 3, 4)
 
 
 # 同时对depochunks、simuchunks进行图像增广
