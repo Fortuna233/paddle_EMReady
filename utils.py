@@ -20,6 +20,8 @@ import mrcfile
 import torch
 from torch import nn
 import numpy as np
+import cupy as cp
+from scipy.ndimage import shift
 from math import ceil
 from interp3d import interp3d
 from pytorch_msssim import ssim
@@ -247,42 +249,36 @@ def try_all_gpus():
 
 
 def align(depoMap, simuMap):
-    # 转换输入为PyTorch张量
-    depoMap = torch.from_numpy(depoMap)
-    simuMap = torch.from_numpy(simuMap)
     padded_shape = [max(depoMap.shape[0], simuMap.shape[0]),
                     max(depoMap.shape[1], simuMap.shape[1]),
                     max(depoMap.shape[2], simuMap.shape[2])]
-    
     # 对两个信号进行零填充（将原始数据放在左上角）
-    depo_padded = torch.zeros(padded_shape, dtype=depoMap.dtype)
+    depo_padded = cp.zeros(padded_shape, dtype=depoMap.dtype)
     depo_padded[:depoMap.shape[0], :depoMap.shape[1], :depoMap.shape[2]] = depoMap
-    
-    simu_padded = torch.zeros(padded_shape, dtype=simuMap.dtype)
+    simu_padded = cp.zeros(padded_shape, dtype=simuMap.dtype)
     simu_padded[:simuMap.shape[0], :simuMap.shape[1], :simuMap.shape[2]] = simuMap
+    # 3D FFT
+    fft_depo = cp.fft.fftn(depo_padded)
+    fft_simu = cp.fft.fftn(simu_padded)
+    # calculate corr
+    corr_freq = fft_depo * cp.conj(fft_simu)
+    # ifftn->real
+    corr = cp.fft.ifftn(corr_freq).real 
+    # get dx, dy, dz
+    corr_shift = cp.fft.fftshift(corr)
+    h, w, d = corr_shift.shape
+    peak_idx = cp.unravel_index(np.argmax(corr_shift), (h, w, d))
+    dx = peak_idx[0] - h // 2
+    dy = peak_idx[1] - w // 2
+    dz = peak_idx[2] - d // 2
     
-    # 执行FFT优化互相关计算
-    # --------------------------------------------
-    # 步骤1: 计算三维快速傅里叶变换
-    fft_depo = torch.fft.fftn(depo_padded)
-    fft_simu = torch.fft.fftn(simu_padded)
-    
-    # 步骤2: 频域相乘（取其中一个的共轭实现互相关）
-    corr_freq = fft_depo * torch.conj(fft_simu)
-    
-    # 步骤3: 逆FFT返回时域相关图
-    corr = torch.fft.ifftn(corr_freq).real  # 取实部舍去浮点误差虚部
-    # --------------------------------------------
-    
-    # 找到最大响应位置（原始conv3d等效结果）
-    max_idx = torch.argmax(corr)
-    dx, dy, dz = np.unravel_index(max_idx.numpy(), corr.shape)
+    return shift(simu_padded, shift=(dx, dy, dz), order=order, mode='constant')
     
     # 计算实际偏移量（考虑FFT填充带来的位置偏移）
     # 公式：offset = peak_pos - (kernel_size - 1)
-    offset_x = dx - (simu_shape[0] - 1)
-    offset_y = dy - (simu_shape[1] - 1)
-    offset_z = dz - (simu_shape[2] - 1)
+    offset_x = dx - 
+    offset_y = dy - 
+    offset_z = dz - 
     
     # 边界保护（确保裁剪区域在原始depoMap范围内）
     offset_x = max(0, min(offset_x, depo_shape[0] - simu_shape[0]))
