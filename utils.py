@@ -14,13 +14,19 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import time
 import random
 import mrcfile
 import torch
+from torch import nn
 import numpy as np
 from math import ceil
 from interp3d import interp3d
-
+from pytorch_msssim import ssim
+from torch import FloatTensor as FT
+from torch.autograd import Variable as V
+import matplotlib.pyplot as plt
+from scunet import SCUNet
 
 def split_map_into_overlapped_chunks(map, box_size, stride, dtype=np.float32, padding=0.0):
     assert stride <= box_size
@@ -244,30 +250,16 @@ def align(depoMap, simuMap):
     # 转换输入为PyTorch张量
     depoMap = torch.from_numpy(depoMap)
     simuMap = torch.from_numpy(simuMap)
-    max_shape = [max(depo_shape[0], simuMap.shape[0]),
-                 max(depo_shape[1], simuMap.shape[1]),
-                 max(depo_shape[2], simuMap.shape[2])]
-    padded = torch.zeros(max_shape, dtype=depoMap.dtype)
-    padded[:depoMap.shape[0], :depoMap.shape[1], :depoMap.shape[2]] = depoMap
-    depoMap = padded
-    # 获取两个三维张量的原始尺寸
-    depo_shape = depoMap.shape
-    simu_shape = simuMap.shape
-    
-    # 计算FFT优化所需填充尺寸（避免循环卷积）
-    # 根据信号处理理论，正确尺寸应为原始尺寸之和减1
-    padded_shape = (
-        depo_shape[0] + simu_shape[0] - 1,
-        depo_shape[1] + simu_shape[1] - 1,
-        depo_shape[2] + simu_shape[2] - 1
-    )
+    padded_shape = [max(depoMap.shape[0], simuMap.shape[0]),
+                    max(depoMap.shape[1], simuMap.shape[1]),
+                    max(depoMap.shape[2], simuMap.shape[2])]
     
     # 对两个信号进行零填充（将原始数据放在左上角）
     depo_padded = torch.zeros(padded_shape, dtype=depoMap.dtype)
-    depo_padded[:depo_shape[0], :depo_shape[1], :depo_shape[2]] = depoMap
+    depo_padded[:depoMap.shape[0], :depoMap.shape[1], :depoMap.shape[2]] = depoMap
     
     simu_padded = torch.zeros(padded_shape, dtype=simuMap.dtype)
-    simu_padded[:simu_shape[0], :simu_shape[1], :simu_shape[2]] = simuMap
+    simu_padded[:simuMap.shape[0], :simuMap.shape[1], :simuMap.shape[2]] = simuMap
     
     # 执行FFT优化互相关计算
     # --------------------------------------------
@@ -311,9 +303,11 @@ def align(depoMap, simuMap):
 
 def get_all_files(directory):
     file_list = list()
+    n_chunks = 0
     for file in os.listdir(directory):
         file_list.append(f"{directory}/{file}")
-    return file_list
+        n_chunks += 1
+    return file_list, n_chunks
 
 
 def split_and_save_tensor(depoFile, simuFile, save_dir, box_size=60, stride=30):
@@ -373,7 +367,9 @@ def data_iter(save_dir, batch_size):
             file_path = os.path.join(save_dir, file)
             chunk = np.load(file_path)
             batch.append(chunk)
-        yield np.array(batch).transpose(1, 0, 2, 3, 4)
+        (X, y) = torch.from_numpy(np.array(batch).transpose(1, 0, 2, 3, 4))
+        X, y = transform(X, y)
+        yield X, y
 
 
 # 同时对depochunks、simuchunks进行图像增广
@@ -401,3 +397,9 @@ def transform(tensor1, tensor2, outsize=48):
     return cropped1, cropped2
 
 
+
+# 定义损失函数
+def loss(pred, target):
+    smooth_l1_loss = nn.SmoothL1Loss(beta=1.0, reduction='mean')
+    return smooth_l1_loss(pred, target) + 1 - ssim(pred, target, data_range=1.0,    size_average=True)
+    
