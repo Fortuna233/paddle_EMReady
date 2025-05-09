@@ -1,4 +1,3 @@
-
 import os
 from math import ceil
 import numpy as np
@@ -10,13 +9,14 @@ from scunet import SCUNet
 from utils import *
 from torch import FloatTensor as FT
 from torch.autograd import Variable as V
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 depoFolder = "/home/ty/training_and_validation_sets/depoFiles"
 # depoFolder = "/data1/ryi/training_and_validation_sets/depoFiles"
 simuFolder = "/home/ty/training_and_validation_sets/simuFiles"
 # simuFolder = "/data1/ryi/training_and_validation_sets/simuFiles"
-save_dir="datasets"
+save_dir="../training_and_validation_sets/datasets"
 batch_size = 32
 apix = 1
 num_epochs = 300
@@ -34,11 +34,18 @@ simuList.sort()
 
 n_chunks, i = 0, 0
 for depoFile, simuFile in zip(depoList, simuList):
-    if(os.path.getsize(depoFile) <= 1024 * 1024 * 512 and os.path.getsize(simuFile) <= 1024 * 1024 * 512):
-        continue
+    # if(os.path.getsize(depoFile) > 1024 * 1024 * 512 and os.path.getsize(simuFile) > 1024 * 1024 * 512):
+    #     continue
     n_chunks += split_and_save_tensor(depoFile, simuFile, save_dir)
     i += 1 
     print(f'processing: {i}/{n_maps}')
+    # os.remove(depoFile)
+    # os.remove(simuFile)
+
+chunks_file = [os.path.join(save_dir, f) for f in os.listdir(save_dir) if f.endswith('.npz')]
+trainData, valiData = train_test_split(chunks_file, test_size=0.25, random_state=42)
+train_iter = data_iter(trainData, batch_size=32, shuffle=True)
+vali_iter = data_iter(valiData, batch_size=32, shuffle=False)
 
 
 # 输入为torch张量batch_size*60*60*60

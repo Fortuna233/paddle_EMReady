@@ -253,48 +253,27 @@ def align(depoMap, simuMap):
                     max(depoMap.shape[1], simuMap.shape[1]),
                     max(depoMap.shape[2], simuMap.shape[2])]
     # 对两个信号进行零填充（将原始数据放在左上角）
-    depo_padded = cp.zeros(padded_shape, dtype=depoMap.dtype)
+    depo_padded = np.zeros(padded_shape, dtype=depoMap.dtype)
     depo_padded[:depoMap.shape[0], :depoMap.shape[1], :depoMap.shape[2]] = depoMap
-    simu_padded = cp.zeros(padded_shape, dtype=simuMap.dtype)
+    simu_padded = np.zeros(padded_shape, dtype=simuMap.dtype)
     simu_padded[:simuMap.shape[0], :simuMap.shape[1], :simuMap.shape[2]] = simuMap
     # 3D FFT
-    fft_depo = cp.fft.fftn(depo_padded)
-    fft_simu = cp.fft.fftn(simu_padded)
+    fft_depo = np.fft.fftn(depo_padded)
+    fft_simu = np.fft.fftn(simu_padded)
     # calculate corr
-    corr_freq = fft_depo * cp.conj(fft_simu)
+    corr_freq = fft_depo * np.conj(fft_simu)
     # ifftn->real
-    corr = cp.fft.ifftn(corr_freq).real 
-    # get dx, dy, dz
-    corr_shift = cp.fft.fftshift(corr)
-    h, w, d = corr_shift.shape
-    peak_idx = cp.unravel_index(np.argmax(corr_shift), (h, w, d))
-    dx = peak_idx[0] - h // 2
-    dy = peak_idx[1] - w // 2
-    dz = peak_idx[2] - d // 2
-    
-    return shift(simu_padded, shift=(dx, dy, dz), order=order, mode='constant')
-    
-    # 计算实际偏移量（考虑FFT填充带来的位置偏移）
-    # 公式：offset = peak_pos - (kernel_size - 1)
-    offset_x = dx - 
-    offset_y = dy - 
-    offset_z = dz - 
-    
-    # 边界保护（确保裁剪区域在原始depoMap范围内）
-    offset_x = max(0, min(offset_x, depo_shape[0] - simu_shape[0]))
-    offset_y = max(0, min(offset_y, depo_shape[1] - simu_shape[1]))
-    offset_z = max(0, min(offset_z, depo_shape[2] - simu_shape[2]))
-    
-    # 执行裁剪操作
-    cropped = depoMap[
-        offset_x : offset_x + simu_shape[0],
-        offset_y : offset_y + simu_shape[1],
-        offset_z : offset_z + simu_shape[2]
-    ]
-    
-    # 调试输出验证尺寸
-    print(f"优化后裁剪尺寸: {cropped.shape}，理论目标尺寸: {simu_shape}")
-    return cropped.numpy()
+    corr = np.fft.ifftn(corr_freq).real 
+
+    peak_idx = np.unravel_index(np.argmax(corr), corr.shape)
+    dx = peak_idx[0]
+    dy = peak_idx[1]
+    dz = peak_idx[2]
+    print(dx, dy, dz)
+    depo_padded = np.roll(depo_padded, shift=-dx, axis=0)
+    depo_padded = np.roll(depo_padded, shift=-dy, axis=1)
+    depo_padded = np.roll(depo_padded, shift=-dz, axis=2)
+    return depo_padded, simu_padded
 
 
 def get_all_files(directory):
@@ -316,7 +295,7 @@ def split_and_save_tensor(depoFile, simuFile, save_dir, box_size=60, stride=30):
     #对齐
     simuMap, simuMax = mrc2map(simuFile, 1.0)
     print("start aligning")
-    depoMap = align(depoMap, simuMap)
+    depoMap, simuMap = align(depoMap, simuMap)
     print("normalization")
     depoMap = depoMap.clip(min=0.0, max=depoMax) / depoMax
     simuMap = simuMap.clip(min=0.0, max=simuMax) / simuMax
@@ -331,12 +310,9 @@ def split_and_save_tensor(depoFile, simuFile, save_dir, box_size=60, stride=30):
     start_point = box_size - stride
     cur_x, cur_y, cur_z = start_point, start_point, start_point
     while (cur_z + stride < map_shape[2] + box_size):
-        next_chunk = [depoPadded[cur_x:cur_x + box_size, cur_y:cur_y + box_size, cur_z:cur_z + box_size],
-                       simuPadded[cur_x:cur_x + box_size, cur_y:cur_y + box_size, cur_z:cur_z + box_size]]
+        next_chunk = [depoPadded[cur_x:cur_x + box_size, cur_y:cur_y + box_size, cur_z:cur_z + box_size], simuPadded[cur_x:cur_x + box_size, cur_y:cur_y + box_size, cur_z:cur_z + box_size]]
         filename = os.path.join(save_dir, f'{depoFile[-18:][:4]}_{cur_x}_{cur_y}_{cur_z}.npy')
         print(f'{depoFile[-18:][:4]}_{cur_x}_{cur_y}_{cur_z}.npy')
-        np.save(filename, next_chunk)
-        n_chunks += 1
         cur_x += stride
         if (cur_x + stride >= map_shape[0] + box_size):
             cur_y += stride
@@ -345,23 +321,25 @@ def split_and_save_tensor(depoFile, simuFile, save_dir, box_size=60, stride=30):
                 cur_z += stride
                 cur_y = start_point # Reset Y
                 cur_x = start_point # Reset X
-    ncx, ncy, ncz = [ceil(map_shape[i] / stride) for i in range(3)]
+        if not (np.sum(next_chunk[0]) > 0 and np.sum(next_chunk[1])):
+            print(np.sum(next_chunk[0]), np.sum(next_chunk[1]))
+            print(f"all 0 tensor delete it")
+            continue
+        np.save(filename, next_chunk)
+        n_chunks += 1
     print(n_chunks)
-    print(ncx, ncy, ncz)
-    assert(n_chunks == ncx * ncy * ncz)
     return n_chunks
 
 
-def data_iter(save_dir, batch_size):
-    block_files = [f for f in os.listdir(save_dir) if f.endswith('.npy')]
-    random.shuffle(block_files)
-    n_chunks = len(block_files)
+def data_iter(chunk_files, batch_size, shuffle=True):
+    if shuffle == True:
+        random.shuffle(chunk_files)
+    n_chunks = len(chunk_files)
     for i in range(0, n_chunks, batch_size):
-        batch_files = block_files[i:min(i + batch_size, n_chunks)]
+        batch_files = chunk_files[i:min(i + batch_size, n_chunks)]
         batch = []
         for file in batch_files:
-            file_path = os.path.join(save_dir, file)
-            chunk = np.load(file_path)
+            chunk = np.load(file)['arr_0']
             batch.append(chunk)
         (X, y) = torch.from_numpy(np.array(batch).transpose(1, 0, 2, 3, 4))
         X, y = transform(X, y)
