@@ -1,0 +1,26 @@
+# Python 编译文件
+__pycache__/
+*.pyc
+*.so
+*.egg
+*.egg-info
+dist/
+build/
+
+# 虚拟环境
+venv/
+env/
+.venv/
+pyvenv.cfg
+pip-delete-this-directory.txt
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# 环境配置
+.env
+.env.local
+
+# data
+data/datasets
+data/params
