@@ -22,6 +22,5 @@ pip-delete-this-directory.txt
 .env.local
 
 # data
-data/**/*
-!data/
-!data/**/
+*.npz
+*.pth
